@@ -1,0 +1,88 @@
+---
+title: "JAGS example"
+author: "Paul M"
+date: "3/27/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction to JAGS  ("Just Another GIBBS Sampler")
+
+[Based on one of the examples at http://www.johnmyleswhite.com/notebook/2010/08/20/using-jags-in-r-with-the-rjags-package/]
+
+First you must install jags on your computer! rjags won't run without it.
+e.g., in the terminal using homebrew: brew install jags"
+Then install the rjags package:
+```{r}
+#install.packages("rjags")
+library(rjags)
+library(coda)
+```
+
+
+# An example using normal rvs, where we are infering the mean and variance:
+
+Let's asusme we have a set of rvs that we know are normally distributed, but wer wish to infer their mean and variance. Generate a test set of data
+```{r}
+N <- 1000
+x <- rnorm(N, 0, 2)
+ 
+write.table(x,
+            file = 'example1.data',
+            row.names = FALSE,
+            col.names = FALSE)
+```
+
+Now we need to write a model specification in JAGS syntax. Put the model specification (below) in a file called example1.bug. The complete model looks like this:
+
+model {
+	for (i in 1:N) {  
+           x[i] ~ dnorm(mu, tau)  
+    	}  
+    	mu ~ dnorm(0, .0001)  
+	    tau <- pow(sigma, -2)  
+	    sigma ~ dunif(0, 100)  
+}
+
+* The first line says that you are specifying a model. 
+* Then you set up the model for every single data point using a for loop. 
+Here, we say that x[i] is distributed normally with mean mu and precision tau.
+Note that rjags works with precision rather than variance! 
+(Precision=1/variance)
+*Then we specify priors for mu and tau. 
+* mu is assumed to be distributed normally with mean 0 and standard deviation 100. This is an example of a  non-informative prior. 
++ Then we specify tau as a deterministic function (hence the deterministic <- instead of the distributional ~) of sigma, after raising sigma to the -2 power. Then we say that sigma has a uniform prior over the interval [0,100].
+
+Now we invoke the model:
+```{r}
+# Set up our model object in R
+jags <- jags.model('example1.bug',   # specification file
+                   data = list('x' = x,   # the data (must use same names as trhe model spec. file)
+                               'N' = N),
+                   n.chains = 4, # how many parallel chains to run
+                   n.adapt = 100   # it can use adaptive sampling, removing the first 100 iterations
+                   )
+ 
+update(jags, 1000)    # run another 1000 iterations. The update function is used to add more iterations.
+ 
+samps <- jags.samples(jags,   # draw 1000 samples from the output for the requested variables
+             c('mu', 'tau'),
+             1000)
+
+summary(samps)
+```
+
+
+You can also set it for use of coda diagnostics for covergence (which also seems to provide a better summary of the output)
+```{r}
+samps2 <- coda.samples( jags, c('mu','tau'), 1000 )
+summary(samps2)
+plot(samps2)
+show(gelman.diag(samps2))
+
+```
